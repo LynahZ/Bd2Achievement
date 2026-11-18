@@ -1,0 +1,62 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ !github.event.deleted && github.ref_name != 'v0.1.0' }}
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+          skip-lts-prepass: true
+
+      - name: Build standalone Windows executables
+        shell: pwsh
+        run: ./Publish-Windows.ps1
+
+      - name: Upload executables to the tag release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $tag = $env:GITHUB_REF_NAME
+          $fileVersion = $tag -replace '[^a-zA-Z0-9._+-]', '-'
+          $assets = @(
+              foreach ($arch in 'x64', 'arm64') {
+                  $asset = "dist/Bd2Achievement-$fileVersion-win-$arch.exe"
+                  Copy-Item -LiteralPath "dist/$arch/Bd2Achievement.exe" -Destination $asset
+                  $asset
+              }
+          )
+
+          $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets 2>$null
+          if ($LASTEXITCODE -ne 0) {
+              gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --verify-tag --title "Bd2Achievement $tag" --generate-notes
+              if ($LASTEXITCODE -ne 0) { throw "Could not create release $tag." }
+              return
+          }
+
+          $existing = ($release | ConvertFrom-Json).assets.name
+          $missing = @($assets | Where-Object { (Split-Path -Leaf $_) -notin $existing })
+          if ($missing.Count) {
+              gh release upload $tag @missing --repo $env:GITHUB_REPOSITORY
+              if ($LASTEXITCODE -ne 0) { throw "Could not upload artifacts for $tag." }
+          }
