@@ -1,20 +1,22 @@
 name: Windows release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: windows-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    if: ${{ !github.event.deleted && github.ref_name != 'v0.1.0' }}
+  build:
+    name: Build Windows x64 and ARM64
+    if: ${{ github.event_name == 'workflow_dispatch' || (!github.event.deleted && github.ref_name != 'v0.1.0') }}
     runs-on: windows-2025
     timeout-minutes: 30
     steps:
@@ -31,6 +33,50 @@ jobs:
         shell: pwsh
         run: ./Publish-Windows.ps1
 
+      - name: Stage executables
+        shell: pwsh
+        run: |
+          $versionSuffix = ''
+          if ($env:GITHUB_EVENT_NAME -eq 'push') {
+              $versionSuffix = '-' + ($env:GITHUB_REF_NAME -replace '[^a-zA-Z0-9._+-]', '-')
+          }
+          foreach ($arch in 'x64', 'arm64') {
+              Copy-Item -LiteralPath "dist/$arch/Bd2Achievement.exe" -Destination "dist/$arch/Bd2Achievement$versionSuffix-win-$arch.exe"
+          }
+
+      - name: Upload Windows x64 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bd2Achievement-win-x64
+          path: dist/x64/*-win-x64.exe
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+      - name: Upload Windows ARM64 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bd2Achievement-win-arm64
+          path: dist/arm64/*-win-arm64.exe
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  release:
+    name: Publish tag release
+    if: ${{ github.event_name == 'push' }}
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: Bd2Achievement-win-*
+          path: release-assets
+          merge-multiple: true
+
       - name: Upload executables to the tag release
         shell: pwsh
         env:
@@ -41,9 +87,7 @@ jobs:
           $fileVersion = $tag -replace '[^a-zA-Z0-9._+-]', '-'
           $assets = @(
               foreach ($arch in 'x64', 'arm64') {
-                  $asset = "dist/Bd2Achievement-$fileVersion-win-$arch.exe"
-                  Copy-Item -LiteralPath "dist/$arch/Bd2Achievement.exe" -Destination $asset
-                  $asset
+                  (Get-Item -LiteralPath "release-assets/Bd2Achievement-$fileVersion-win-$arch.exe").FullName
               }
           )
 

@@ -28,6 +28,12 @@ pwsh -NoProfile -File .\Publish-Windows.ps1
 
 ## 用 GitHub Actions 发布版本
 
+### 手动构建
+
+打开 [Actions](https://github.com/LynahZ/Bd2Achievement/actions)，选择 **Windows release → Run workflow**，选中 `main` 后运行。完成后，在该次运行的 **Artifacts** 区下载 `Bd2Achievement-win-x64` 或 `Bd2Achievement-win-arm64`，解压即可得到对应的独立 EXE。手动运行只构建并上传产物，不创建标签或 Release。
+
+### 推送标签发布
+
 先把要发布的提交推到主分支，再给包含发布工作流的提交打一个新的版本标签。下面用 `v0.2.0` 举例：
 
 ~~~powershell
